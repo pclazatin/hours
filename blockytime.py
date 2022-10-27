@@ -71,7 +71,7 @@ def load_sql():
 
 
 def update_db(new_events=None, has_duplicates=True):
-    """this function udpates the sqlite database
+    """this function updates the sqlite database
     and checks for duplicates to add only the unique new events
     """
     global TABLES
@@ -109,17 +109,17 @@ def remove_db_events(new_events):
         t['start_datetime'] = t['Start'].apply(
             lambda x: dt.datetime.strptime(x, DATE_FORMAT))
 
-        #add only the new events not already in the database
-        not_in_db = pd.concat([db_events, db_events, new_events])
-        not_in_db.drop_duplicates(
-            subset=['start_datetime'],
-            keep=False,
-            inplace=True
-        )
-        #drop the temporary datetime field
-        del not_in_db['start_datetime']
+    #add only the new events not already in the database
+    not_in_db = pd.concat([db_events, db_events, new_events])
+    not_in_db.drop_duplicates(
+        subset=['start_datetime'],
+        keep=False,
+        inplace=True
+    )
+    #drop the temporary datetime field
+    del not_in_db['start_datetime']
 
-        return not_in_db
+    return not_in_db
 
 
 #-----------------------------------------------------------------------------
