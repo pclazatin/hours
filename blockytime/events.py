@@ -25,7 +25,7 @@ TABLES = {
 }
 SQL_EVENT_TABLENAME = 'event'
 DATE_FORMAT = '%Y-%m-%d %H:%M'
-CSV_FILENAME = '../events.csv'
+CSV_FILENAME = 'events.csv'
 REPORTING_YEAR = 2020
 REPORTING_MONTH = 12
 
