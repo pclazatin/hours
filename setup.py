@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='hours',
-    version='1.0',
+    version='1.1',
     packages=find_packages(),
     url='https://github.com/pclazatin/hours.git',
     description='use sqlgsheet to create and update blockytime events and post to gsheet',
