@@ -18,5 +18,5 @@ six==1.16.0
 SQLAlchemy==1.4.29
 typing_extensions==4.0.1
 zipp==3.6.0
-setuptools~=59.6.0
+setuptools==59.6.0
 sqlite-gsheet @ git+https://github.com/taylorhickem/sqlite-gsheet.git
