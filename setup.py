@@ -7,6 +7,9 @@ setup(
     url='https://github.com/pclazatin/hours.git',
     description='use sqlgsheet to create and update blockytime events and post to gsheet',
     author='@pclazatin',
+    package_data={'':[
+        '*.json'
+    ]},
     long_description=open('README.md').read(),
     install_requires=open("requirements.txt", "r").read().splitlines(),
     include_package_data=True
