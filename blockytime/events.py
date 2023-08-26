@@ -15,6 +15,7 @@ import sys
 from sqlgsheet import database as db
 import datetime as dt
 import pandas as pd
+from sqlgsheet.sync import update as sync_update
 
 
 #-----------------------------------------------------------------------------
@@ -28,7 +29,9 @@ DATE_FORMAT = '%Y-%m-%d %H:%M'
 CSV_FILENAME = 'events.csv'
 REPORTING_YEAR = 2020
 REPORTING_MONTH = 12
-
+LAST_MODIFIED_FIELD = 'last_modified'
+DB_EVENT_TABLE = 'event'
+SYNC_FILE = 'dbsync_config.json'
 
 #-----------------------------------------------------------------------------
 #main
@@ -88,11 +91,11 @@ def update_db(new_events=None, has_duplicates=True):
                 update_db(not_in_db, has_duplicates=False)
             else:
                 #only the incremental events
-                db.update_table(new_events, 'event', append=True)
+                db_rows_insert(new_events)
 
         else: #first update
             has_duplicates = False
-            db.update_table(new_events, 'event', append=False)
+            db_rows_insert(new_events)
 
     if not has_duplicates:
         db_events = db.get_table('event')
@@ -103,6 +106,8 @@ def update_db(new_events=None, has_duplicates=True):
 def remove_db_events(new_events):
     #get the events from the db
     db_events = db.get_table(SQL_EVENT_TABLENAME)
+    if LAST_MODIFIED_FIELD in db_events:
+        del db_events[LAST_MODIFIED_FIELD]
 
     #add a datetime field to use as the unique field to both tables
     for t in [db_events, new_events]:
@@ -209,6 +214,23 @@ def timestamp_rm_seconds(datetime_str):
             ts_no_sec = datetime_str[:-3]
         return ts_no_sec
 
+def add_lm_timestamp(rows: pd.DataFrame) -> pd.DataFrame:
+    with_lm = rows.copy()
+    if len(with_lm) > 0:
+        last_modified = dt.datetime.now()
+        with_lm[LAST_MODIFIED_FIELD] = last_modified
+    return with_lm
+
+
+def db_rows_insert(rows: pd.DataFrame):
+    with_lm = add_lm_timestamp(rows)
+    if db.table_exists(DB_EVENT_TABLE):
+        db.rows_insert(with_lm, DB_EVENT_TABLE, con=db.con)
+    else:
+        db.update_table(with_lm, DB_EVENT_TABLE, append=False)
+
+def db_sync():
+    sync_update(config_path=SYNC_FILE)
 
 # -----------------------------------------------------
 # Command line interface
@@ -216,7 +238,9 @@ def timestamp_rm_seconds(datetime_str):
 def autorun():
     if len(sys.argv) > 1:
         process_name = sys.argv[1]
-        if process_name == 'pink_floyd':
+        if process_name == 'sync':
+            db_sync()
+        elif process_name == 'pink_floyd':
             print('dont take a slice of my pie')
     else:
         update()
