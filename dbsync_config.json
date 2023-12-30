@@ -1,0 +1,19 @@
+{
+  "master": {
+    "db_type": "sqlite",
+    "database": "sqlite:///myapp.db"
+  },
+  "slave": {
+    "db_type": "mysql",
+    "database": "hours",
+    "login": "mysql+pymysql://{user}:{pw}@pclazatin-hours-mysql.cxifb52ks9be.ap-southeast-1.rds.amazonaws.com/{db}",
+    "username": "admin",
+    "password": "qs,ZD86G5Je5]+p"
+  },
+  "tables": {
+    "event": {
+      "last_modified": "last_modified",
+      "key": "Start"
+    }
+  }
+}
