@@ -7,6 +7,8 @@ converts the raw file into two hours reports
 each report has rows of the categories (or subcategories)
 and columns for each month in the year
 
+this version is compatible for use in AWS lambda
+
 """
 #-----------------------------------------------------------------------------
 #import dependencies
@@ -15,7 +17,6 @@ import sys
 from sqlgsheet import database as db
 import datetime as dt
 import pandas as pd
-from sqlgsheet.sync import update as sync_update
 
 
 #-----------------------------------------------------------------------------
@@ -25,37 +26,34 @@ TABLES = {
     'events': []
 }
 SQL_EVENT_TABLENAME = 'event'
+LAST_MODIFIED_FIELD = 'last_modified'
 DATE_FORMAT = '%Y-%m-%d %H:%M'
 CSV_FILENAME = 'events.csv'
 REPORTING_YEAR = 2020
 REPORTING_MONTH = 12
-LAST_MODIFIED_FIELD = 'last_modified'
-DB_EVENT_TABLE = 'event'
-SYNC_FILE = 'dbsync_config.json'
+
 
 #-----------------------------------------------------------------------------
 #main
 #-----------------------------------------------------------------------------
-def update(events=None):
-    """this function updates the gsheet report with new blockytime events
-   :return: None
+def update(events=None, db_load=True):
+    """ this function updates the gsheet report with new blockytime events
+    :return: None
     """
-    load()
+    load(db_load=db_load)
     transform_events(events)
-    max_date = events['start_date'].max()
-    print(f'max date: {max_date:}')
     update_db()
 
     create_report_tables()
     post_to_gsheet()
-    print('report updated!')
 
 
 #-----------------------------------------------------------------------------
 #setup
 #-----------------------------------------------------------------------------
-def load():
-    db.load()
+def load(db_load=True):
+    if db_load:
+        db.load()
     update_config()
 
 
@@ -68,15 +66,13 @@ def update_config():
     REPORTING_MONTH = int(parameters['reporting_month'])
 
 
-# -----------------------------------------------------------------------------
-#SQLite
-# -----------------------------------------------------------------------------
-def load_sql():
-    db.load_sql()
+#-----------------------------------------------------------------------------
+# Database
+#-----------------------------------------------------------------------------
 
 
 def update_db(new_events=None, has_duplicates=True):
-    """this function updates the sqlite database
+    """ this function updates the sqlite database
     and checks for duplicates to add only the unique new events
     """
     global TABLES
@@ -89,41 +85,39 @@ def update_db(new_events=None, has_duplicates=True):
                 #compare and remove duplicates that are already in the db
                 not_in_db = remove_db_events(new_events)
 
-                #recursive call no duplicates
+                # recursive call no duplicates
                 update_db(not_in_db, has_duplicates=False)
             else:
-                #only the incremental events
-                db_rows_insert(new_events)
+                # only the incremental events
+                db_rows_insert(new_events, SQL_EVENT_TABLENAME, con=db.con)
 
         else: #first update
             has_duplicates = False
-            db_rows_insert(new_events)
+            db.update_table(new_events, SQL_EVENT_TABLENAME, append=False)
 
     if not has_duplicates:
-        db_events = db.get_table('event')
+        db_events = db.get_table(SQL_EVENT_TABLENAME)
         report_year = db_events[db_events.year == REPORTING_YEAR]
         TABLES['events'] = report_year
 
 
 def remove_db_events(new_events):
-    #get the events from the db
+    # get the events from the db
     db_events = db.get_table(SQL_EVENT_TABLENAME)
-    if LAST_MODIFIED_FIELD in db_events:
-        del db_events[LAST_MODIFIED_FIELD]
 
-    #add a datetime field to use as the unique field to both tables
+    # add a datetime field to use as the unique field to both tables
     for t in [db_events, new_events]:
         t['start_datetime'] = t['Start'].apply(
             lambda x: dt.datetime.strptime(x, DATE_FORMAT))
 
-    #add only the new events not already in the database
+    # add only the new events not already in the database
     not_in_db = pd.concat([db_events, db_events, new_events])
     not_in_db.drop_duplicates(
         subset=['start_datetime'],
         keep=False,
         inplace=True
     )
-    #drop the temporary datetime field
+    # drop the temporary datetime field
     del not_in_db['start_datetime']
 
     return not_in_db
@@ -136,11 +130,7 @@ def transform_events(events=None):
     global TABLES
     if events is None:
         events = pd.read_csv(CSV_FILENAME, encoding='iso-8859-1')
-    subfields = ['Start',
-                 'Duration',
-                 'Event Type',
-                 'Event Object',
-                 'Comment']
+
     events['start_date'] = events['Start'].apply(
         lambda x: dt.datetime.strptime(x, DATE_FORMAT).date())
     events['day'] = events['start_date'].apply(lambda x: x.day)
@@ -158,6 +148,8 @@ def transform_events(events=None):
     #fill blank categories
     events['Event Type'].fillna('', inplace=True)
     events['Event Object'].fillna('', inplace=True)
+    events['Comment'].fillna('', inplace=True)
+    events['Tag'].fillna(0, inplace=True)
 
     #trim
     events['Event Type'] = events['Event Type'].apply(lambda x: x.strip())
@@ -212,27 +204,24 @@ def timestamp_rm_seconds(datetime_str):
         dt_split = datetime_str.split(':')
         if len(dt_split) == 3:
             has_sec = True
-        if has_sec:
-            ts_no_sec = datetime_str[:-3]
-        return ts_no_sec
+    if has_sec:
+        ts_no_sec = datetime_str[:-3]
+    return ts_no_sec
+
+def db_rows_insert(rows: pd.DataFrame, table_name, con=db.con):
+    with_lm = add_lm_timestamp(rows)
+    if db.table_exists(table_name):
+        db.rows_insert(with_lm, table_name, con=con)
+    else:
+        raise ValueError(f'table {table_name} does not exist.')
 
 def add_lm_timestamp(rows: pd.DataFrame) -> pd.DataFrame:
     with_lm = rows.copy()
     if len(with_lm) > 0:
-        last_modified = dt.datetime.now()
+        last_modified = dt.datetime.now().strftime(DATE_FORMAT)
         with_lm[LAST_MODIFIED_FIELD] = last_modified
     return with_lm
 
-
-def db_rows_insert(rows: pd.DataFrame):
-    with_lm = add_lm_timestamp(rows)
-    if db.table_exists(DB_EVENT_TABLE):
-        db.rows_insert(with_lm, DB_EVENT_TABLE, con=db.con)
-    else:
-        db.update_table(with_lm, DB_EVENT_TABLE, append=False)
-
-def db_sync():
-    sync_update(config_path=SYNC_FILE)
 
 # -----------------------------------------------------
 # Command line interface
@@ -240,9 +229,7 @@ def db_sync():
 def autorun():
     if len(sys.argv) > 1:
         process_name = sys.argv[1]
-        if process_name == 'sync':
-            db_sync()
-        elif process_name == 'pink_floyd':
+        if process_name == 'pink_floyd':
             print('dont take a slice of my pie')
     else:
         update()
